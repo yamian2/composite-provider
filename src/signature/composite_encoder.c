@@ -14,7 +14,7 @@
 #include "composite_sig_encoding.h"
 #include "composite_sig_key.h"
 #include "provider_ctx.h"
-#include "../include/composite_provider.h"
+#include "composite_provider.h"
 
 #include <openssl/core.h>
 #include <openssl/core_dispatch.h>

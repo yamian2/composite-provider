@@ -29,6 +29,24 @@ static const KEM_TEST_CASE test_cases[] = {
     { MLKEM1024_P521_SN, DEFAULT_MLKEM1024_NAME, "EC", 521, "secp521r1" },
 };
 
+static int mlkem_components_available(COMPOSITE_CTX *ctx)
+{
+    EVP_PKEY_CTX *pctx768 = NULL;
+    EVP_PKEY_CTX *pctx1024 = NULL;
+    int available;
+
+    pctx768 = EVP_PKEY_CTX_new_from_name(ctx->libctx, DEFAULT_MLKEM768_NAME,
+                                         NULL);
+    pctx1024 = EVP_PKEY_CTX_new_from_name(ctx->libctx, DEFAULT_MLKEM1024_NAME,
+                                          NULL);
+    available = pctx768 != NULL && pctx1024 != NULL;
+    EVP_PKEY_CTX_free(pctx768);
+    EVP_PKEY_CTX_free(pctx1024);
+    if (!available)
+        ERR_clear_error();
+    return available;
+}
+
 static int test_invalid_arguments(COMPOSITE_CTX *ctx)
 {
     COMPOSITE_KEM_KEY *key = composite_kemkey_new();
@@ -81,12 +99,21 @@ int main(void)
     COMPOSITE_CTX ctx = { 0 };
     size_t i;
     int ok = 1;
+    int components_available;
 
     ctx.libctx = OSSL_LIB_CTX_new();
     if (ctx.libctx == NULL)
         return 1;
 
     ok &= test_invalid_arguments(&ctx);
+    components_available = mlkem_components_available(&ctx);
+    if (!components_available) {
+        printf("Composite KEM keygen positive cases: SKIP "
+               "(ML-KEM components unavailable)\n");
+        OSSL_LIB_CTX_free(ctx.libctx);
+        return ok ? 0 : 1;
+    }
+
     for (i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++)
         ok &= test_algorithm(&ctx, &test_cases[i]);
 

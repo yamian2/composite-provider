@@ -5,9 +5,9 @@
 #include <openssl/evp.h>
 #include <openssl/provider.h>
 
-#include "../include/composite_provider.h"
-#include "../src/composite_sig_key.h"
-#include "../src/provider_ctx.h"
+#include "composite_provider.h"
+#include "composite_sig_key.h"
+#include "provider_ctx.h"
 
 static int test_count = 0;
 static int test_passed = 0;

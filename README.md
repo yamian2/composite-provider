@@ -27,7 +27,7 @@ Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM, formerly Kyber) combin
 
 ## Requirements
 
-- OpenSSL 3.0 or later
+- OpenSSL 3.5 or later (ML-KEM and ML-DSA are 3.5 features)
 - CMake 3.10 or later (or GNU Make)
 - GCC or compatible C compiler
 
@@ -119,11 +119,11 @@ activate = 1
 
 The provider implements:
 
-1. **Provider Infrastructure** (`src/provider.c`): Core provider initialization and registration
-2. **Signature Operations** (`src/composite_sig.c`): Composite signature implementation
-3. **KEM Operations** (`src/composite_kem.c`): Composite KEM implementation
-4. **ML-DSA Dispatch** (`src/mldsa_composite.c`): ML-DSA algorithm dispatch tables
-5. **ML-KEM Dispatch** (`src/mlkem_composite.c`): ML-KEM algorithm dispatch tables
+1. **Provider Infrastructure** (`src/common/provider.c`): Core provider initialization and registration
+2. **Signature Operations** (`src/signature/composite_sig.c`): Composite signature implementation
+3. **KEM Operations** (`src/kem/composite_kem.c`): Composite KEM implementation
+4. **ML-DSA Dispatch** (`src/signature/mldsa_composite.c`): ML-DSA algorithm dispatch tables
+5. **ML-KEM Dispatch** (`src/kem/mlkem_composite.c`): ML-KEM algorithm dispatch tables
 
 ## Security Considerations
 

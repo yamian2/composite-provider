@@ -52,6 +52,8 @@ BEGIN_C_DECLS
 #define ML_KEM_768_PUB_KEY_SZ  1184
 #define ML_KEM_768_PRIV_KEY_SZ 64
 #define ML_KEM_768_CT_SZ       1088
+#define ML_KEM_SS_SZ           32
+#define COMPOSITE_KEM_SS_SIZE  32
 
 /* Key context structure */
 typedef struct composite_kemkey_st {
@@ -73,7 +75,13 @@ typedef struct composite_kemkey_st {
     EVP_PKEY_CTX *ml_kem_ctx;
     EVP_PKEY *mlkem_key;
 
-    // ML-KEM public and private keys
+    /*
+     * ML-KEM public and private keys.
+     *
+     * These fields own their EVP_PKEY references. If the same private-capable
+     * EVP_PKEY is stored in both fields, the second assignment must first call
+     * EVP_PKEY_up_ref().
+     */
     void *mlkem_privkey;
     void *mlkem_pubkey;
 
@@ -82,7 +90,12 @@ typedef struct composite_kemkey_st {
     EVP_PKEY_CTX *classic_ctx;
     EVP_PKEY *classic_key;
 
-    // Classic Algorithm public and private keys
+    /*
+     * Classic Algorithm public and private keys.
+     *
+     * These fields own their EVP_PKEY references. get0 accessors return
+     * borrowed pointers; set0 transfers ownership to COMPOSITE_KEM_KEY.
+     */
     void *classic_privkey;
     void *classic_pubkey;
 
@@ -160,6 +173,10 @@ int composite_kemkey_set0_components(COMPOSITE_KEM_KEY * key,
                                      EVP_PKEY          * ml_kem_key,
                                      EVP_PKEY          * trad_key);
 
+EVP_PKEY *composite_kemkey_get0_mlkem_public(const COMPOSITE_KEM_KEY *key);
+EVP_PKEY *composite_kemkey_get0_classic_public(const COMPOSITE_KEM_KEY *key);
+EVP_PKEY *composite_kemkey_get0_mlkem_private(const COMPOSITE_KEM_KEY *key);
+EVP_PKEY *composite_kemkey_get0_classic_private(const COMPOSITE_KEM_KEY *key);
 
 END_C_DECLS
 

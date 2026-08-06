@@ -5,8 +5,8 @@
 
 #include <openssl/objects.h>
 
-#include "../include/composite_provider.h"
-#include "../src/composite_encoder.h"
+#include "composite_provider.h"
+#include "composite_encoder.h"
 
 static int test_count  = 0;
 static int test_passed = 0;

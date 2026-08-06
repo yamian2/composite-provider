@@ -8,7 +8,7 @@
 #define COMPOSITE_DECODER_H
 
 #include "compat.h"
-#include "../include/composite_provider.h"
+#include "composite_provider.h"
 
 #include <openssl/core.h>
 

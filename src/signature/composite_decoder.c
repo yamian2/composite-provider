@@ -20,7 +20,7 @@
 #include "composite_sig_encoding.h"
 #include "composite_keymgmt.h"
 #include "provider_ctx.h"
-#include "../include/composite_provider.h"
+#include "composite_provider.h"
 
 #include <string.h>
 #include <openssl/core.h>

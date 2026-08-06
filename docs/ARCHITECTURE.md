@@ -9,10 +9,13 @@ The Composite Provider is an OpenSSL 3.0+ provider that implements composite pos
 ## Directory Structure
 
 ```
-composite-provider/
+composite-src/
 ├── include/              # Public header files
 │   └── composite_provider.h
-├── src/                  # Source files
+├── src/             # Provider implementation
+│   ├── common/           # Provider entrypoint and shared infrastructure
+│   ├── kem/              # Composite ML-KEM implementation
+│   └── signature/        # Composite ML-DSA signature implementation
 │   ├── provider.c        # Provider initialization and registration
 │   ├── composite_sig.c   # Signature operations implementation
 │   ├── composite_kem.c   # KEM operations implementation
@@ -176,13 +179,3 @@ The architecture supports:
 - KEM operations combine two encapsulations (sequential)
 - Memory usage scales with sum of component sizes
 - Processing time is sum of component times
-
-## Future Enhancements
-
-Planned improvements:
-1. Full cryptographic implementation (currently placeholders)
-2. Key generation support
-3. Key import/export
-4. ASN.1 encoding/decoding
-5. Performance optimizations
-6. Hardware acceleration support

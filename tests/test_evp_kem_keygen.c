@@ -4,6 +4,7 @@
 #include <stdio.h>
 
 #include "composite_provider.h"
+#include "composite_test.h"
 
 typedef struct {
     const char *name;
@@ -49,35 +50,61 @@ done:
     return ok;
 }
 
-static int test_kem_operations_not_advertised(void)
+/*
+ * Every composite KEM must be advertised, or none of them: the provider no
+ * longer gates OSSL_OP_KEM on a runtime probe, so partial advertising would mean
+ * the dispatch tables and the algorithm list had drifted apart.
+ */
+static int test_kem_operation_advertising_consistent(void)
 {
-    EVP_KEM *kem = EVP_KEM_fetch(NULL, test_cases[0].name,
-                                 "provider=composite");
+    size_t i;
 
-    if (kem != NULL) {
+    for (i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++) {
+        EVP_KEM *kem = EVP_KEM_fetch(NULL, test_cases[i].name,
+                                     "provider=composite");
+
+        if (kem == NULL) {
+            printf("%s: FAIL (KEM operation not advertised)\n",
+                   test_cases[i].name);
+            ERR_print_errors_fp(stderr);
+            return 0;
+        }
         EVP_KEM_free(kem);
-        return 0;
     }
-    ERR_clear_error();
+    printf("all %zu composite KEMs advertised: PASS\n",
+           sizeof(test_cases) / sizeof(test_cases[0]));
     return 1;
 }
 
 int main(void)
 {
-    OSSL_PROVIDER *provider = NULL;
+    COMPOSITE_TEST_PROVIDERS providers = { NULL, NULL };
     size_t i;
     int ok = 1;
 
-    provider = OSSL_PROVIDER_load(NULL, "composite");
-    if (provider == NULL) {
+    if (!composite_test_providers_load(&providers)) {
+        composite_test_providers_unload(&providers);
+        return 1;
+    }
+    if (ERR_peek_error() != 0) {
+        fprintf(stderr, "provider load succeeded but left errors queued\n");
         ERR_print_errors_fp(stderr);
+        composite_test_providers_unload(&providers);
         return 1;
     }
 
-    ok &= test_kem_operations_not_advertised();
+    ok = test_kem_operation_advertising_consistent();
+
+    if (!composite_test_mlkem_available()) {
+        printf("test_evp_kem_keygen: SKIP (no ML-KEM-768/1024 in this "
+               "OpenSSL build)\n");
+        composite_test_providers_unload(&providers);
+        return ok ? COMPOSITE_TEST_SKIP : 1;
+    }
+
     for (i = 0; i < sizeof(test_cases) / sizeof(test_cases[0]); i++)
         ok &= test_algorithm(&test_cases[i]);
 
-    OSSL_PROVIDER_unload(provider);
+    composite_test_providers_unload(&providers);
     return ok ? 0 : 1;
 }

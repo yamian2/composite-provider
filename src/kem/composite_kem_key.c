@@ -1,46 +1,10 @@
 #include "composite_kem_key.h"
+#include "composite_kem_info.h"
 
 #include <openssl/core_names.h>
 #include <openssl/ec.h>
 #include <openssl/rsa.h>
 #include <string.h>
-
-typedef struct {
-    const char *composite_name;
-    const char *mlkem_name;
-    const char *classic_name;
-    int classic_param;
-} COMPOSITE_KEM_ALG_INFO;
-
-static const COMPOSITE_KEM_ALG_INFO kem_algorithms[] = {
-    { MLKEM768_RSA2048_SN, DEFAULT_MLKEM768_NAME, DEFAULT_RSA_NAME, 2048 },
-    { MLKEM768_RSA3072_SN, DEFAULT_MLKEM768_NAME, DEFAULT_RSA_NAME, 3072 },
-    { MLKEM768_RSA4096_SN, DEFAULT_MLKEM768_NAME, DEFAULT_RSA_NAME, 4096 },
-    { MLKEM768_X25519_SN, DEFAULT_MLKEM768_NAME, "X25519", 0 },
-    { MLKEM768_P256_SN, DEFAULT_MLKEM768_NAME, "EC", NID_X9_62_prime256v1 },
-    { MLKEM768_P384_SN, DEFAULT_MLKEM768_NAME, "EC", NID_secp384r1 },
-    { MLKEM768_BRAINPOOLP256_SN, DEFAULT_MLKEM768_NAME, "EC", NID_brainpoolP256r1 },
-    { MLKEM1024_RSA3072_SN, DEFAULT_MLKEM1024_NAME, DEFAULT_RSA_NAME, 3072 },
-    { MLKEM1024_P384_SN, DEFAULT_MLKEM1024_NAME, "EC", NID_secp384r1 },
-    { MLKEM1024_BRAINPOOLP384_SN, DEFAULT_MLKEM1024_NAME, "EC", NID_brainpoolP384r1 },
-    { MLKEM1024_X448_SN, DEFAULT_MLKEM1024_NAME, "X448", 0 },
-    { MLKEM1024_P521_SN, DEFAULT_MLKEM1024_NAME, "EC", NID_secp521r1 },
-};
-
-static const COMPOSITE_KEM_ALG_INFO *composite_kem_alg_info_find(
-        const char *composite_name)
-{
-    size_t i;
-
-    if (composite_name == NULL)
-        return NULL;
-
-    for (i = 0; i < sizeof(kem_algorithms) / sizeof(kem_algorithms[0]); i++) {
-        if (strcmp(kem_algorithms[i].composite_name, composite_name) == 0)
-            return &kem_algorithms[i];
-    }
-    return NULL;
-}
 
 static EVP_PKEY *generate_key(COMPOSITE_CTX *ctx, const char *algorithm,
                               int parameter)
@@ -103,21 +67,46 @@ int composite_kemkey_generate(COMPOSITE_KEM_KEY *key,
     }
 
     mlkem_key = generate_key(ctx, alg->mlkem_name, 0);
-    if (mlkem_key == NULL)
+    if (mlkem_key == NULL) {
+        /*
+         * This is the point where a missing ML-KEM implementation actually
+         * matters, so name it here rather than probing at provider-init time -
+         * a probe there would bake provider load order into the answer.
+         */
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_UNSUPPORTED,
+                       "%s requires a loaded provider offering %s "
+                       "(OpenSSL 3.5 or later)",
+                       alg->composite_name, alg->mlkem_name);
         goto err;
+    }
 
     classic_key = generate_key(ctx, alg->classic_name, alg->classic_param);
-    if (classic_key == NULL)
+    if (classic_key == NULL) {
+        ERR_raise_data(ERR_LIB_PROV, ERR_R_UNSUPPORTED,
+                       "%s requires a loaded provider offering %s",
+                       alg->composite_name, alg->classic_name);
         goto err;
+    }
+
+    if (!EVP_PKEY_up_ref(mlkem_key))
+        goto err;
+    if (!EVP_PKEY_up_ref(classic_key)) {
+        EVP_PKEY_free(mlkem_key);
+        goto err;
+    }
 
     EVP_PKEY_free((EVP_PKEY *)key->mlkem_pubkey);
+    EVP_PKEY_free((EVP_PKEY *)key->mlkem_privkey);
     EVP_PKEY_free((EVP_PKEY *)key->classic_pubkey);
+    EVP_PKEY_free((EVP_PKEY *)key->classic_privkey);
     key->provctx = ctx;
     key->composite_name = alg->composite_name;
     key->mlkem_name = alg->mlkem_name;
     key->classic_algorithm_name = alg->classic_name;
     key->mlkem_pubkey = mlkem_key;
+    key->mlkem_privkey = mlkem_key;
     key->classic_pubkey = classic_key;
+    key->classic_privkey = classic_key;
     key->has_private = 1;
     return 1;
 
@@ -164,10 +153,59 @@ int composite_kemkey_set0_components(COMPOSITE_KEM_KEY *key,
         return 0;
     }
 
+    /*
+     * These are set0 semantics: the caller has already handed over its
+     * reference, so on failure we own the keys and must release them - the
+     * caller is documented not to.
+     */
+    if (!EVP_PKEY_up_ref(ml_kem_key)) {
+        EVP_PKEY_free(ml_kem_key);
+        EVP_PKEY_free(trad_key);
+        return 0;
+    }
+    if (!EVP_PKEY_up_ref(trad_key)) {
+        EVP_PKEY_free(ml_kem_key);  /* undo the up_ref above */
+        EVP_PKEY_free(ml_kem_key);  /* release the transferred reference */
+        EVP_PKEY_free(trad_key);
+        return 0;
+    }
+
     EVP_PKEY_free((EVP_PKEY *)key->mlkem_pubkey);
+    EVP_PKEY_free((EVP_PKEY *)key->mlkem_privkey);
     EVP_PKEY_free((EVP_PKEY *)key->classic_pubkey);
+    EVP_PKEY_free((EVP_PKEY *)key->classic_privkey);
     key->mlkem_pubkey = ml_kem_key;
+    key->mlkem_privkey = ml_kem_key;
     key->classic_pubkey = trad_key;
+    key->classic_privkey = trad_key;
     key->has_private = 1;
     return 1;
+}
+
+EVP_PKEY *composite_kemkey_get0_mlkem_public(const COMPOSITE_KEM_KEY *key)
+{
+    return key == NULL ? NULL : (EVP_PKEY *)key->mlkem_pubkey;
+}
+
+EVP_PKEY *composite_kemkey_get0_classic_public(const COMPOSITE_KEM_KEY *key)
+{
+    return key == NULL ? NULL : (EVP_PKEY *)key->classic_pubkey;
+}
+
+EVP_PKEY *composite_kemkey_get0_mlkem_private(const COMPOSITE_KEM_KEY *key)
+{
+    if (key == NULL)
+        return NULL;
+    return key->mlkem_privkey != NULL
+        ? (EVP_PKEY *)key->mlkem_privkey
+        : (EVP_PKEY *)key->mlkem_pubkey;
+}
+
+EVP_PKEY *composite_kemkey_get0_classic_private(const COMPOSITE_KEM_KEY *key)
+{
+    if (key == NULL)
+        return NULL;
+    return key->classic_privkey != NULL
+        ? (EVP_PKEY *)key->classic_privkey
+        : (EVP_PKEY *)key->classic_pubkey;
 }

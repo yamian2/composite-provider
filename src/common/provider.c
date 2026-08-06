@@ -2,6 +2,8 @@
 #include "composite_encoder.h"
 #include "composite_decoder.h"
 
+#include <openssl/crypto.h>
+
 /* Provider initialization */
 static OSSL_FUNC_provider_gettable_params_fn composite_gettable_params;
 static OSSL_FUNC_provider_get_params_fn composite_get_params;
@@ -48,7 +50,6 @@ static int composite_get_params(void *provctx, OSSL_PARAM params[])
 const OSSL_ALGORITHM *composite_query_operation(void *provctx, int operation_id,
                                                  int *no_cache)
 {
-    (void)provctx; /* Unused */
     *no_cache = 0;
 
     switch (operation_id) {
@@ -60,6 +61,15 @@ const OSSL_ALGORITHM *composite_query_operation(void *provctx, int operation_id,
         return composite_encoders(provctx);
     case OSSL_OP_DECODER:
         return composite_decoders(provctx);
+    /*
+     * The composite KEMs are advertised unconditionally. Probing for ML-KEM
+     * here (or caching a probe from OSSL_provider_init) would make availability
+     * depend on provider load order and, because no_cache is 0, OpenSSL would
+     * cache the empty result forever. Key generation reports a specific error if
+     * the ML-KEM component is missing, which is where the caller can act on it.
+     */
+    case OSSL_OP_KEM:
+        return composite_kem_algorithms(provctx);
     }
 
     return NULL;
@@ -92,9 +102,6 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *core,
     COMPOSITE_CTX *ctx;
         // Composite provider context
 
-    int rc = 0;
-        // Return code
-
     /* Register composite algorithm OIDs in the global OBJ database */
     composite_register_oids();
 
@@ -122,26 +129,5 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *core,
         COMPOSITE_DEBUG0("OQS PROV: Default or FIPS provider available.\n");
     }
 
-    rc = 1;
-
-    if (!rc) {
-
-        // Initialization failed
-        ERR_raise(ERR_LIB_PROV, ERR_R_INIT_FAIL);
-
-        // Clean up the CTX
-        if (ctx) {
-            if (ctx->libctx) { 
-                OSSL_LIB_CTX_free(ctx->libctx);
-            }
-            OPENSSL_free(ctx);
-        }
-        
-        if (provctx && *provctx) {
-            composite_teardown(*provctx);
-            *provctx = NULL;
-        }
-    }
-
-    return rc;
+    return 1;
 }
