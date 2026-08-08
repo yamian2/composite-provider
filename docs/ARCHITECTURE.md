@@ -69,10 +69,19 @@ Registers 6 composite signature algorithms:
 
 #### ML-KEM Dispatch (`mlkem_composite.c`)
 
-Registers 3 composite KEM algorithms:
-- ML-KEM-512-ECDH-P256
-- ML-KEM-768-ECDH-P384
-- ML-KEM-1024-ECDH-P521
+Registers the 12 composite KEM algorithms of
+draft-ietf-lamps-pq-composite-kem-18:
+- ML-KEM-768 variants (RSA2048, RSA3072, RSA4096, X25519, ECDH-P256,
+  ECDH-P384, ECDH-brainpoolP256r1)
+- ML-KEM-1024 variants (RSA3072, ECDH-P384, ECDH-brainpoolP384r1, X448,
+  ECDH-P521)
+
+#### KEM Key Encoding (`composite_kem_decoder.c` / `composite_kem_encoder.c`)
+
+PKCS#8 (PrivateKeyInfo) and SubjectPublicKeyInfo codecs for all 12 composite
+KEMs, in both PEM and DER. AlgorithmIdentifier parameters are required to be
+absent on decode (draft §5.2/§5.3), and the public key is always re-derived
+from private material rather than trusted from the encoding.
 
 ## Data Flow
 
@@ -119,6 +128,14 @@ composite_kem_encapsulate()
     ↓
 Return ciphertext and shared secret
 ```
+
+Decapsulation mirrors this through `EVP_PKEY_decapsulate*`:
+`composite_kem_decapsulate()` splits the ciphertext into its ML-KEM and
+traditional halves, decapsulates each component, and feeds both secrets —
+together with the traditional ciphertext and the recipient's traditional
+public key (recovered from the private key, draft §10.4) — through the
+SHA3-256 combiner. Malformed input is reported as an error before the
+combiner runs (§3.3).
 
 ## Algorithm Structure
 

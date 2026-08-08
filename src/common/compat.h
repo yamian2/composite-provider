@@ -33,9 +33,10 @@ and ANSI C compilers can issue warnings about type mismatches. */
 # define ATTRIBUTE_NO_SANITIZE_ADDRESS
 #endif
 
-#define COMPOSITE_DEBUG(fmt, ...) \
+#define COMPOSITE_DEBUG(...) \
     if (getenv("COMPOSITE_DEBUG")) { \
-        printf("[COMPOSITE:DEBUG][%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__); \
+        printf("[COMPOSITE:DEBUG][%s:%d] ", __func__, __LINE__); \
+        printf(__VA_ARGS__); \
         printf("\n"); \
     }
 
@@ -48,7 +49,10 @@ and ANSI C compilers can issue warnings about type mismatches. */
 #define COMPOSITE_DEBUG2(fmt, arg1, arg2) \
     COMPOSITE_DEBUG(fmt, arg1, arg2)
 
-#define COMPOSITE_ERROR(fmt, ...) \
-    printf("[COMPOSITE:ERROR][%s:%d] " fmt, __func__, __LINE__, ##__VA_ARGS__);
+#define COMPOSITE_ERROR(...) \
+    do { \
+        printf("[COMPOSITE:ERROR][%s:%d] ", __func__, __LINE__); \
+        printf(__VA_ARGS__); \
+    } while (0)
 
 #endif // End of _COMPAT_H

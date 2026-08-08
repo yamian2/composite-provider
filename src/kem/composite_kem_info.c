@@ -2,7 +2,9 @@
 
 #include <openssl/crypto.h>
 #include <openssl/ec.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/objects.h>
 #include <string.h>
 
 #define MLKEM_SS_LEN 32
@@ -79,6 +81,49 @@ static const COMPOSITE_KEM_ALG_INFO kem_algorithms[] = {
       COMP_KEM_TRAD_ECDH, NID_secp521r1, 133, COMPOSITE_FINAL_SS_LEN,
       LABEL_INFO(label_mlkem1024_p521) },
 };
+
+/*
+ * Register the composite KEM OIDs in the global OBJ database so that
+ * OBJ_sn2nid()/OBJ_txt2nid() resolve them.  The PKCS#8 and SPKI codecs match
+ * incoming AlgorithmIdentifiers against OBJ_sn2nid(composite_name), so without
+ * this every composite KEM key would be silently rejected.
+ *
+ * Deliberately OBJ_create() only — unlike the signature registration in
+ * composite_register_oids(), there is no OBJ_add_sigid() call, because that
+ * declares a *signature* algorithm identifier and is meaningless for a KEM.
+ *
+ * ERR marks keep the queue clean when the OIDs are already registered
+ * (e.g. the provider is loaded more than once in a process).
+ */
+void composite_kem_register_oids(void)
+{
+    ERR_set_mark();
+
+#define REGISTER_KEM_OID(oid, sn, ln) \
+        do { \
+            if (OBJ_txt2nid(oid) == NID_undef) \
+                (void)OBJ_create((oid), (sn), (ln)); \
+        } while (0)
+
+    REGISTER_KEM_OID(MLKEM768_RSA2048_OID, MLKEM768_RSA2048_SN, MLKEM768_RSA2048_LN);
+    REGISTER_KEM_OID(MLKEM768_RSA3072_OID, MLKEM768_RSA3072_SN, MLKEM768_RSA3072_LN);
+    REGISTER_KEM_OID(MLKEM768_RSA4096_OID, MLKEM768_RSA4096_SN, MLKEM768_RSA4096_LN);
+    REGISTER_KEM_OID(MLKEM768_X25519_OID, MLKEM768_X25519_SN, MLKEM768_X25519_LN);
+    REGISTER_KEM_OID(MLKEM768_P256_OID, MLKEM768_P256_SN, MLKEM768_P256_LN);
+    REGISTER_KEM_OID(MLKEM768_P384_OID, MLKEM768_P384_SN, MLKEM768_P384_LN);
+    REGISTER_KEM_OID(MLKEM768_BRAINPOOLP256_OID, MLKEM768_BRAINPOOLP256_SN,
+                     MLKEM768_BRAINPOOLP256_LN);
+    REGISTER_KEM_OID(MLKEM1024_RSA3072_OID, MLKEM1024_RSA3072_SN, MLKEM1024_RSA3072_LN);
+    REGISTER_KEM_OID(MLKEM1024_P384_OID, MLKEM1024_P384_SN, MLKEM1024_P384_LN);
+    REGISTER_KEM_OID(MLKEM1024_BRAINPOOLP384_OID, MLKEM1024_BRAINPOOLP384_SN,
+                     MLKEM1024_BRAINPOOLP384_LN);
+    REGISTER_KEM_OID(MLKEM1024_X448_OID, MLKEM1024_X448_SN, MLKEM1024_X448_LN);
+    REGISTER_KEM_OID(MLKEM1024_P521_OID, MLKEM1024_P521_SN, MLKEM1024_P521_LN);
+
+#undef REGISTER_KEM_OID
+
+    ERR_pop_to_mark();
+}
 
 const COMPOSITE_KEM_ALG_INFO *composite_kem_alg_info_find(
         const char *composite_name)

@@ -156,27 +156,82 @@ int composite_kemkey_get0_components(const COMPOSITE_KEM_KEY  * const key,
                                      EVP_PKEY                ** const ml_kem_key,
                                      EVP_PKEY                ** const trad_key);
 
-/*!
- * \brief Sets the components of a Composite Key
- *
- * This function sets the ML-KEM key and traditional key components of
- * a Composite Key. The components are transferred (moved) to the new
- * Composite Key and the caller SHALL NOT free them.
- *
- * \param[in] key The Composite Key to set components for.
- * \param[in] ml_kem_key The ML-DSA key to set.
- * \param[in] trad_key The traditional key to set.
- * 
- * \return 1 on success, 0 on failure.
- */
-int composite_kemkey_set0_components(COMPOSITE_KEM_KEY * key, 
-                                     EVP_PKEY          * ml_kem_key,
-                                     EVP_PKEY          * trad_key);
-
 EVP_PKEY *composite_kemkey_get0_mlkem_public(const COMPOSITE_KEM_KEY *key);
 EVP_PKEY *composite_kemkey_get0_classic_public(const COMPOSITE_KEM_KEY *key);
 EVP_PKEY *composite_kemkey_get0_mlkem_private(const COMPOSITE_KEM_KEY *key);
 EVP_PKEY *composite_kemkey_get0_classic_private(const COMPOSITE_KEM_KEY *key);
+
+/*!
+ * \brief Import a composite private key from its draft §4.2 serialization.
+ *
+ * dk = mlkemSeed(64) || tradSK, where tradSK is a DER RSAPrivateKey (RFC 8017),
+ * a DER ECPrivateKey (RFC 5915), or the raw X25519/X448 scalar.  Rebuilds both
+ * component EVP_PKEYs (the classic public half is derived by OpenSSL from the
+ * private material) and sets has_private.
+ *
+ * key->composite_name and key->provctx must already be set.
+ *
+ * \return 1 on success, 0 on failure.
+ */
+int composite_kemkey_import_private(COMPOSITE_KEM_KEY *key,
+                                    const unsigned char *dk, size_t dk_len);
+
+/*!
+ * \brief Import a composite public key from its draft §4.1 serialization.
+ *
+ * ek = mlkemPK || tradPK, where tradPK is a DER RSAPublicKey, an uncompressed
+ * X9.62 EC point, or the raw X25519/X448 public key.  Populates only the
+ * public component slots; has_private is left at 0.
+ *
+ * \return 1 on success, 0 on failure.
+ */
+int composite_kemkey_import_public(COMPOSITE_KEM_KEY *key,
+                                   const unsigned char *ek, size_t ek_len);
+
+/*!
+ * \brief Serialize the composite private key per draft §4.2
+ *        (mlkemSeed(64) || tradSK).
+ *
+ * *out is OPENSSL_malloc'd key material: the caller must release it with
+ * OPENSSL_clear_free(*out, *out_len).
+ *
+ * \return 1 on success, 0 on failure.
+ */
+int composite_kemkey_encode_private(const COMPOSITE_KEM_KEY *key,
+                                    unsigned char **out, size_t *out_len);
+
+/*!
+ * \brief Serialize the composite public key per draft §4.1
+ *        (mlkemPK || tradPK).  *out is OPENSSL_malloc'd; caller frees.
+ *
+ * \return 1 on success, 0 on failure.
+ */
+int composite_kemkey_encode_public(const COMPOSITE_KEM_KEY *key,
+                                   unsigned char **out, size_t *out_len);
+
+/*
+ * Serialize the traditional component public key in its combiner (tradPK)
+ * encoding: DER RSAPublicKey, uncompressed X9.62 point, or raw bytes.
+ * Shared by encapsulation, decapsulation and export.  *out is
+ * OPENSSL_malloc'd; caller frees.
+ *
+ * (Forward-declared struct: composite_kem_info.h includes this header, so the
+ * full COMPOSITE_KEM_ALG_INFO definition cannot be pulled in here.)
+ */
+struct composite_kem_alg_info_st;
+int composite_kemkey_serialize_trad_public(
+        const struct composite_kem_alg_info_st *alg,
+        EVP_PKEY *pkey, unsigned char **out, size_t *out_len);
+
+/*
+ * Build a traditional-component public EVP_PKEY from its wire encoding
+ * (an uncompressed EC point, raw X25519/X448 bytes, or DER RSAPublicKey).
+ * Used for public-key import and for reconstructing the sender's ephemeral
+ * key from tradCT during decapsulation.
+ */
+EVP_PKEY *composite_kemkey_classic_pub_from_bytes(
+        OSSL_LIB_CTX *libctx, const struct composite_kem_alg_info_st *alg,
+        const unsigned char *buf, size_t len);
 
 END_C_DECLS
 

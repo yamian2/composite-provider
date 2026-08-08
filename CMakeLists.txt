@@ -34,6 +34,8 @@ set(PROVIDER_SOURCES
     src/kem/composite_kem_encoding.c
     src/kem/composite_kem_info.c
     src/kem/composite_kem.c
+    src/kem/composite_kem_decoder.c
+    src/kem/composite_kem_encoder.c
     src/kem/mlkem_composite.c
     src/signature/mldsa_composite.c
     src/signature/composite_keys.c

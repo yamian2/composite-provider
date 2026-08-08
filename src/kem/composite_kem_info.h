@@ -15,7 +15,7 @@ typedef enum {
     COMP_KEM_TRAD_X448
 } COMPOSITE_KEM_TRAD_TYPE;
 
-typedef struct {
+typedef struct composite_kem_alg_info_st {
     const char *composite_name;
     const char *mlkem_name;
     int mlkem_alg_id;
@@ -32,6 +32,13 @@ typedef struct {
 
 const COMPOSITE_KEM_ALG_INFO *composite_kem_alg_info_find(
         const char *composite_name);
+
+/*
+ * Register the 12 composite KEM OIDs with the global OBJ database
+ * (OBJ_create only — no OBJ_add_sigid, these are not signature algorithms).
+ * Idempotent and safe to call more than once.
+ */
+void composite_kem_register_oids(void);
 
 int composite_kem_combine_shared_secret(OSSL_LIB_CTX *libctx,
                                         const COMPOSITE_KEM_ALG_INFO *alg,

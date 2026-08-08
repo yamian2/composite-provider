@@ -75,7 +75,13 @@ static int composite_spki_decode(void *vctx, OSSL_CORE_BIO *cin,
     X509_ALGOR          *alg    = NULL;
     ASN1_BIT_STRING     *bs     = NULL;
     COMPOSITE_KEY       *key    = NULL;
-    int                  ret    = 0;
+    /*
+     * Returning 0 from a decode function is fatal to the whole decoder
+     * chain, not just this decoder: data that merely isn't ours (wrong OID,
+     * unparsable) must return 1 with no object callback so the framework
+     * tries the other registered decoders.
+     */
+    int                  ret    = 1;
 
     (void)pw_cb; (void)pw_cbarg;
 
@@ -109,8 +115,10 @@ static int composite_spki_decode(void *vctx, OSSL_CORE_BIO *cin,
 
         while ((n = BIO_read(in, chunk, (int)sizeof(chunk))) > 0) {
             tmp = OPENSSL_realloc(derbuf, (size_t)(derlen + n));
-            if (tmp == NULL)
+            if (tmp == NULL) {
+                ret = 0;
                 goto done;
+            }
             derbuf = tmp;
             memcpy(derbuf + derlen, chunk, (size_t)n);
             derlen += (long)n;
@@ -136,8 +144,10 @@ static int composite_spki_decode(void *vctx, OSSL_CORE_BIO *cin,
         goto done;
 
     key = composite_key_new(ctx->provctx, ctx->composite_name);
-    if (key == NULL)
+    if (key == NULL) {
+        ret = 0;
         goto done;
+    }
 
     if (!composite_sig_pubkey_decode(key, ASN1_STRING_get0_data(bs), (size_t)ASN1_STRING_length(bs)))
         goto done;
@@ -197,7 +207,7 @@ static int composite_pki_decode(void *vctx, OSSL_CORE_BIO *cin,
     int                   pkeylen = 0;
     const X509_ALGOR     *alg     = NULL;
     COMPOSITE_KEY        *key     = NULL;
-    int                   ret     = 0;
+    int                   ret     = 1; /* see composite_spki_decode: 0 is fatal */
 
     (void)pw_cb; (void)pw_cbarg;
 
@@ -212,7 +222,7 @@ static int composite_pki_decode(void *vctx, OSSL_CORE_BIO *cin,
             ASN1_ITEM_rptr(PKCS8_PRIV_KEY_INFO), in, NULL);
     BIO_free(in);
     if (p8 == NULL)
-        return 0;
+        return 1; /* not a PrivateKeyInfo — let other decoders try */
 
     if (!PKCS8_pkey_get0(&palg, &pkey, &pkeylen, &alg, p8))
         goto done;
@@ -226,8 +236,10 @@ static int composite_pki_decode(void *vctx, OSSL_CORE_BIO *cin,
     }
 
     key = composite_key_new(ctx->provctx, ctx->composite_name);
-    if (key == NULL)
+    if (key == NULL) {
+        ret = 0;
         goto done;
+    }
 
     if (!composite_sig_privkey_decode(key, pkey, (size_t)pkeylen))
         goto done;

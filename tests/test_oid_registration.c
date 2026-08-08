@@ -7,6 +7,7 @@
 
 #include "composite_provider.h"
 #include "composite_encoder.h"
+#include "composite_kem_info.h"
 
 static int test_count  = 0;
 static int test_passed = 0;
@@ -42,6 +43,24 @@ static const char *all_sns[] = {
     MLDSA87_P521_SN,
 };
 static const int N_ALGS = (int)(sizeof(all_sns) / sizeof(all_sns[0]));
+
+/* All 12 composite KEM short names, with dotted OIDs for a full cross-check */
+static const struct { const char *sn; const char *oid; } kem_sn_to_oid[] = {
+    { MLKEM768_RSA2048_SN,        MLKEM768_RSA2048_OID        },
+    { MLKEM768_RSA3072_SN,        MLKEM768_RSA3072_OID        },
+    { MLKEM768_RSA4096_SN,        MLKEM768_RSA4096_OID        },
+    { MLKEM768_X25519_SN,         MLKEM768_X25519_OID         },
+    { MLKEM768_P256_SN,           MLKEM768_P256_OID           },
+    { MLKEM768_P384_SN,           MLKEM768_P384_OID           },
+    { MLKEM768_BRAINPOOLP256_SN,  MLKEM768_BRAINPOOLP256_OID  },
+    { MLKEM1024_RSA3072_SN,       MLKEM1024_RSA3072_OID       },
+    { MLKEM1024_P384_SN,          MLKEM1024_P384_OID          },
+    { MLKEM1024_BRAINPOOLP384_SN, MLKEM1024_BRAINPOOLP384_OID },
+    { MLKEM1024_X448_SN,          MLKEM1024_X448_OID          },
+    { MLKEM1024_P521_SN,          MLKEM1024_P521_OID          },
+};
+static const int N_KEM_ALGS =
+    (int)(sizeof(kem_sn_to_oid) / sizeof(kem_sn_to_oid[0]));
 
 /* Corresponding dotted OID strings for a cross-check subset */
 static const struct { const char *sn; const char *oid; } sn_to_oid[] = {
@@ -191,6 +210,88 @@ static int test_oids_all_resolve_after_registration(void)
     return 1;
 }
 
+/*
+ * After composite_kem_register_oids(), OBJ_sn2nid() must resolve every
+ * composite KEM short name, and the dotted OID must map to the same NID.
+ * The PKCS#8/SPKI decoders match incoming AlgorithmIdentifiers against
+ * OBJ_sn2nid(composite_name), so an unresolved SN means every key of that
+ * algorithm is silently rejected.
+ */
+static int test_kem_oids_sn2nid_all(void)
+{
+    TEST_START("OBJ_sn2nid resolves all 12 composite KEM SNs after registration");
+
+    composite_kem_register_oids();
+
+    for (int i = 0; i < N_KEM_ALGS; i++) {
+        int nid_sn  = OBJ_sn2nid(kem_sn_to_oid[i].sn);
+        int nid_oid = OBJ_txt2nid(kem_sn_to_oid[i].oid);
+        if (nid_sn == NID_undef) {
+            printf("FAILED (unresolved SN): %s\n", kem_sn_to_oid[i].sn);
+            return 0;
+        }
+        if (nid_sn != nid_oid) {
+            printf("FAILED (NID mismatch for %s): sn=%d oid=%d\n",
+                   kem_sn_to_oid[i].sn, nid_sn, nid_oid);
+            return 0;
+        }
+    }
+    TEST_PASS();
+    return 1;
+}
+
+/*
+ * Registering the KEM OIDs must not have attached signature algorithm IDs:
+ * OBJ_find_sigid_algs() succeeding for a KEM NID would mean OBJ_add_sigid()
+ * was called somewhere, which declares these as signature algorithms.
+ */
+static int test_kem_oids_have_no_sigid(void)
+{
+    TEST_START("composite KEM NIDs carry no signature algorithm binding");
+
+    composite_kem_register_oids();
+
+    for (int i = 0; i < N_KEM_ALGS; i++) {
+        int nid = OBJ_sn2nid(kem_sn_to_oid[i].sn);
+        int dig_nid  = NID_undef;
+        int pkey_nid = NID_undef;
+        if (nid != NID_undef
+                && OBJ_find_sigid_algs(nid, &dig_nid, &pkey_nid)) {
+            printf("FAILED (unexpected sigid for %s)\n", kem_sn_to_oid[i].sn);
+            return 0;
+        }
+    }
+    TEST_PASS();
+    return 1;
+}
+
+/*
+ * A second composite_kem_register_oids() call must return the same NIDs.
+ */
+static int test_kem_oids_idempotent(void)
+{
+    TEST_START("composite_kem_register_oids() is idempotent");
+
+    composite_kem_register_oids();
+
+    int nids_first[12];
+    for (int i = 0; i < N_KEM_ALGS; i++)
+        nids_first[i] = OBJ_sn2nid(kem_sn_to_oid[i].sn);
+
+    composite_kem_register_oids();
+
+    for (int i = 0; i < N_KEM_ALGS; i++) {
+        int nid2 = OBJ_sn2nid(kem_sn_to_oid[i].sn);
+        if (nids_first[i] != nid2) {
+            printf("FAILED: NID changed for %s (%d -> %d)\n",
+                   kem_sn_to_oid[i].sn, nids_first[i], nid2);
+            return 0;
+        }
+    }
+    TEST_PASS();
+    return 1;
+}
+
 /* -------------------------------------------------------------------------
  * main
  * ---------------------------------------------------------------------- */
@@ -204,6 +305,9 @@ int main(void)
     test_oids_idempotent();
     test_oids_txt2nid_matches_sn2nid();
     test_oids_all_resolve_after_registration();
+    test_kem_oids_sn2nid_all();
+    test_kem_oids_have_no_sigid();
+    test_kem_oids_idempotent();
 
     printf("\n=== Test Results ===\n");
     printf("Total:  %d\n", test_count);
