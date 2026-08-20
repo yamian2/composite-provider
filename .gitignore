@@ -54,8 +54,8 @@ dkms.conf
 # debug information files
 *.dwo
 
-# CMake build directory
-build/
+# CMake build directory (build*/ also covers per-OpenSSL-version build dirs)
+build*/
 _build/
 cmake-build-debug/
 .idea/

@@ -2,16 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "../src/composite_sig_key.h"
-#include "../src/composite_sig_encoding.h"
-#include "../src/composite_kem_encoding.h"
-#include "../src/provider_ctx.h"
+#include "composite_sig_key.h"
+#include "composite_sig_encoding.h"
+#include "composite_kem_encoding.h"
+#include "provider_ctx.h"
 #include <openssl/evp.h>
 #include <openssl/ec.h>
 
 /* Helper: build a minimal COMPOSITE_CTX with a NULL libctx (sufficient for
  * generating keys directly via OpenSSL without loading the provider). */
-static COMPOSITE_CTX g_test_ctx = { NULL, NULL, 0 };
+static COMPOSITE_CTX g_test_ctx = { 0 };
 
 /* Helper: generate a fresh ML-DSA-44 EVP_PKEY (public+private). */
 static EVP_PKEY *gen_mldsa44(void)

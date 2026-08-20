@@ -59,9 +59,12 @@ Successfully implemented a clean OpenSSL 3.0+ provider for ML-DSA and ML-KEM com
 
 ### Project Structure
 ```
-composite-provider/
+composite-src/
 ├── include/          # Headers
-├── src/             # Source files
+├── src/        # Provider implementation
+│   ├── common/      # Provider entrypoint and shared infrastructure
+│   ├── kem/         # Composite ML-KEM implementation
+│   └── signature/   # Composite ML-DSA signature implementation
 ├── tests/           # Test suite
 ├── examples/        # Usage examples
 └── docs/            # Documentation
@@ -115,14 +118,14 @@ codeql analyze
 ## Files Created
 
 ### Core Implementation (5 files)
-1. `src/provider.c` - Provider infrastructure
-2. `src/composite_sig.c` - Signature operations
-3. `src/composite_kem.c` - KEM operations
-4. `src/mldsa_composite.c` - ML-DSA algorithm dispatch
-5. `src/mlkem_composite.c` - ML-KEM algorithm dispatch
+1. `src/common/provider.c` - Provider infrastructure
+2. `src/signature/composite_sig.c` - Signature operations
+3. `src/kem/composite_kem.c` - KEM operations
+4. `src/signature/mldsa_composite.c` - ML-DSA algorithm dispatch
+5. `src/kem/mlkem_composite.c` - ML-KEM algorithm dispatch
 
 ### Headers (1 file)
-1. `include/composite_provider.h` - Public API
+1. `src/common/composite_provider.h` - Public API
 
 ### Build System (2 files)
 1. `Makefile` - Simple build

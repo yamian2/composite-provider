@@ -9,7 +9,7 @@
 #define COMPOSITE_ENCODER_H
 
 #include "compat.h"
-#include "../include/composite_provider.h"
+#include "composite_provider.h"
 
 #include <openssl/core.h>
 

@@ -1,6 +1,66 @@
 #include "provider.h"
 #include "composite_encoder.h"
 #include "composite_decoder.h"
+#include "composite_kem_info.h"
+#include "composite_kem_decoder.h"
+#include "composite_kem_encoder.h"
+
+#include <openssl/crypto.h>
+
+/*
+ * The signature and KEM modules each publish their own codec algorithm
+ * lists, but OSSL_PROVIDER_QUERY_OPERATION returns exactly one array per
+ * operation.  Merge the two lists once, on first query; both sources are
+ * static const arrays that ignore provctx, so the merge does not depend on
+ * which provider instance triggers it.
+ *
+ * Capacity: 24 KEM + 36 signature decoders, 48 KEM + 54 signature encoders,
+ * plus a terminator.  merge_algorithm_lists() stops early (leaving the list
+ * terminated) rather than overrun if an addition outgrows this — bump the
+ * size when adding algorithms.
+ */
+#define COMPOSITE_MAX_CODEC_ALGS 128
+
+static OSSL_ALGORITHM merged_decoders[COMPOSITE_MAX_CODEC_ALGS];
+static OSSL_ALGORITHM merged_encoders[COMPOSITE_MAX_CODEC_ALGS];
+static CRYPTO_ONCE codec_merge_once = CRYPTO_ONCE_STATIC_INIT;
+
+static size_t merge_algorithm_lists(OSSL_ALGORITHM *dst, size_t used,
+                                    const OSSL_ALGORITHM *src)
+{
+    for (; src != NULL && src->algorithm_names != NULL; src++) {
+        if (used >= COMPOSITE_MAX_CODEC_ALGS - 1)
+            break;
+        dst[used++] = *src;
+    }
+    dst[used].algorithm_names = NULL;
+    return used;
+}
+
+static void codec_merge_do(void)
+{
+    size_t n;
+
+    n = merge_algorithm_lists(merged_decoders, 0, composite_decoders(NULL));
+    (void)merge_algorithm_lists(merged_decoders, n, composite_kem_decoders(NULL));
+
+    n = merge_algorithm_lists(merged_encoders, 0, composite_encoders(NULL));
+    (void)merge_algorithm_lists(merged_encoders, n, composite_kem_encoders(NULL));
+}
+
+static const OSSL_ALGORITHM *composite_all_decoders(void)
+{
+    if (!CRYPTO_THREAD_run_once(&codec_merge_once, codec_merge_do))
+        return NULL;
+    return merged_decoders;
+}
+
+static const OSSL_ALGORITHM *composite_all_encoders(void)
+{
+    if (!CRYPTO_THREAD_run_once(&codec_merge_once, codec_merge_do))
+        return NULL;
+    return merged_encoders;
+}
 
 /* Provider initialization */
 static OSSL_FUNC_provider_gettable_params_fn composite_gettable_params;
@@ -48,7 +108,6 @@ static int composite_get_params(void *provctx, OSSL_PARAM params[])
 const OSSL_ALGORITHM *composite_query_operation(void *provctx, int operation_id,
                                                  int *no_cache)
 {
-    (void)provctx; /* Unused */
     *no_cache = 0;
 
     switch (operation_id) {
@@ -57,9 +116,18 @@ const OSSL_ALGORITHM *composite_query_operation(void *provctx, int operation_id,
     case OSSL_OP_KEYMGMT:
         return composite_keymgmt(provctx);
     case OSSL_OP_ENCODER:
-        return composite_encoders(provctx);
+        return composite_all_encoders();
     case OSSL_OP_DECODER:
-        return composite_decoders(provctx);
+        return composite_all_decoders();
+    /*
+     * The composite KEMs are advertised unconditionally. Probing for ML-KEM
+     * here (or caching a probe from OSSL_provider_init) would make availability
+     * depend on provider load order and, because no_cache is 0, OpenSSL would
+     * cache the empty result forever. Key generation reports a specific error if
+     * the ML-KEM component is missing, which is where the caller can act on it.
+     */
+    case OSSL_OP_KEM:
+        return composite_kem_algorithms(provctx);
     }
 
     return NULL;
@@ -92,11 +160,20 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *core,
     COMPOSITE_CTX *ctx;
         // Composite provider context
 
-    int rc = 0;
-        // Return code
-
-    /* Register composite algorithm OIDs in the global OBJ database */
+    /*
+     * Register composite algorithm OIDs in the global OBJ database.
+     *
+     * Both registrations must run before any codec does OBJ_sn2nid() on a
+     * composite name: the PKCS#8 and SPKI paths match an incoming
+     * AlgorithmIdentifier against the NID that these calls create, so an
+     * unregistered OID makes every composite key look like an unknown
+     * algorithm.  The KEM half is deliberately a separate function that calls
+     * OBJ_create() only -- composite_register_oids() also calls
+     * OBJ_add_sigid(), which declares a signature algorithm ID and is
+     * meaningless for a KEM.
+     */
     composite_register_oids();
+    composite_kem_register_oids();
 
     ctx = OPENSSL_zalloc(sizeof(*ctx));
     if (ctx == NULL)
@@ -122,26 +199,5 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *core,
         COMPOSITE_DEBUG0("OQS PROV: Default or FIPS provider available.\n");
     }
 
-    rc = 1;
-
-    if (!rc) {
-
-        // Initialization failed
-        ERR_raise(ERR_LIB_PROV, ERR_R_INIT_FAIL);
-
-        // Clean up the CTX
-        if (ctx) {
-            if (ctx->libctx) { 
-                OSSL_LIB_CTX_free(ctx->libctx);
-            }
-            OPENSSL_free(ctx);
-        }
-        
-        if (provctx && *provctx) {
-            composite_teardown(*provctx);
-            *provctx = NULL;
-        }
-    }
-
-    return rc;
+    return 1;
 }

@@ -1,6 +1,8 @@
 #include "composite_kem_keymgmt.h"
 
 #include <openssl/core_names.h>
+#include <openssl/err.h>
+#include <openssl/params.h>
 #include <string.h>
 
 typedef struct {
@@ -140,6 +142,127 @@ static int kem_get_params(void *keydata, OSSL_PARAM params[])
     return 1;
 }
 
+/* =========================================================================
+ * Import / export
+ *
+ * The wire form on both sides is the draft's raw concatenation: ek for the
+ * public key (§4.1) and dk for the private key (§4.2).  Only those two
+ * parameters are handled -- there is deliberately no per-component import,
+ * because a composite key assembled from separately supplied ML-KEM and
+ * traditional halves could pair components the composite OID does not name.
+ * ========================================================================= */
+
+static const OSSL_PARAM kem_key_types[] = {
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PUB_KEY, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_PKEY_PARAM_PRIV_KEY, NULL, 0),
+    OSSL_PARAM_END
+};
+
+static const OSSL_PARAM *kem_import_types(int selection)
+{
+    return (selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0 ? kem_key_types : NULL;
+}
+
+static const OSSL_PARAM *kem_export_types(int selection)
+{
+    return (selection & OSSL_KEYMGMT_SELECT_KEYPAIR) != 0 ? kem_key_types : NULL;
+}
+
+static int kem_import(void *keydata, int selection, const OSSL_PARAM params[])
+{
+    COMPOSITE_KEM_KEY *key = keydata;
+    const OSSL_PARAM *p;
+
+    if (key == NULL || params == NULL)
+        return 0;
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) == 0)
+        return 0;
+
+    /*
+     * Private first: dk carries the traditional private component, from which
+     * OpenSSL derives the matching public half, so importing it populates both
+     * slots.  Doing it the other way round would let a public-key import
+     * silently discard the private material.
+     */
+    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0) {
+        p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_PRIV_KEY);
+        if (p != NULL) {
+            if (p->data_type != OSSL_PARAM_OCTET_STRING)
+                return 0;
+            return composite_kemkey_import_private(key, p->data, p->data_size);
+        }
+    }
+
+    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
+        p = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_PUB_KEY);
+        if (p != NULL) {
+            if (p->data_type != OSSL_PARAM_OCTET_STRING)
+                return 0;
+            return composite_kemkey_import_public(key, p->data, p->data_size);
+        }
+    }
+
+    ERR_raise_data(ERR_LIB_PROV, ERR_R_PASSED_INVALID_ARGUMENT,
+                   "composite KEM import requires \"%s\" or \"%s\"",
+                   OSSL_PKEY_PARAM_PRIV_KEY, OSSL_PKEY_PARAM_PUB_KEY);
+    return 0;
+}
+
+/*
+ * Accept a key reference from this provider's own decoders
+ * (OSSL_OBJECT_PARAM_REFERENCE hand-off).  The reference is a pointer to a
+ * COMPOSITE_KEM_KEY pointer; ownership transfers to the caller.
+ */
+static void *kem_load(const void *reference, size_t reference_sz)
+{
+    if (reference == NULL || reference_sz != sizeof(COMPOSITE_KEM_KEY *))
+        return NULL;
+    return *(COMPOSITE_KEM_KEY * const *)reference;
+}
+
+static int kem_export(void *keydata, int selection,
+                      OSSL_CALLBACK *param_cb, void *cbarg)
+{
+    COMPOSITE_KEM_KEY *key = keydata;
+    OSSL_PARAM params[3];
+    size_t n = 0;
+    unsigned char *pub = NULL, *priv = NULL;
+    size_t pub_len = 0, priv_len = 0;
+    int ret = 0;
+
+    if (key == NULL || param_cb == NULL)
+        return 0;
+    if ((selection & OSSL_KEYMGMT_SELECT_KEYPAIR) == 0)
+        return 0;
+
+    if ((selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY) != 0) {
+        if (!composite_kemkey_encode_public(key, &pub, &pub_len))
+            goto done;
+        params[n++] = OSSL_PARAM_construct_octet_string(
+                OSSL_PKEY_PARAM_PUB_KEY, pub, pub_len);
+    }
+    if ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0 && key->has_private) {
+        if (!composite_kemkey_encode_private(key, &priv, &priv_len))
+            goto done;
+        params[n++] = OSSL_PARAM_construct_octet_string(
+                OSSL_PKEY_PARAM_PRIV_KEY, priv, priv_len);
+    }
+    if (n == 0)
+        goto done;
+
+    params[n] = OSSL_PARAM_construct_end();
+    ret = param_cb(params, cbarg);
+
+done:
+    /*
+     * The callback has either copied what it needs or failed; either way the
+     * seed and traditional private scalar must not outlive this frame.
+     */
+    OPENSSL_clear_free(priv, priv_len);
+    OPENSSL_free(pub);
+    return ret;
+}
+
 #define KEM_KEYMGMT(name, sn)                                                   \
     static void *name##_new(void *provctx)                                      \
     { return kem_key_new((COMPOSITE_CTX *)provctx, sn); }                       \
@@ -169,6 +292,11 @@ static int kem_get_params(void *keydata, OSSL_PARAM params[])
         { OSSL_FUNC_KEYMGMT_GEN_INIT, (void (*)(void))kem_gen_init },           \
         { OSSL_FUNC_KEYMGMT_GEN, (void (*)(void))name##_gen },                  \
         { OSSL_FUNC_KEYMGMT_GEN_CLEANUP, (void (*)(void))kem_gen_cleanup },     \
+        { OSSL_FUNC_KEYMGMT_LOAD, (void (*)(void))kem_load },                   \
+        { OSSL_FUNC_KEYMGMT_IMPORT, (void (*)(void))kem_import },               \
+        { OSSL_FUNC_KEYMGMT_IMPORT_TYPES, (void (*)(void))kem_import_types },   \
+        { OSSL_FUNC_KEYMGMT_EXPORT, (void (*)(void))kem_export },               \
+        { OSSL_FUNC_KEYMGMT_EXPORT_TYPES, (void (*)(void))kem_export_types },   \
         OSSL_DISPATCH_END                                                       \
     }
 

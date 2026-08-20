@@ -19,15 +19,28 @@ Module-Lattice-Based Digital Signature Algorithm (ML-DSA, formerly Dilithium) co
 - **ML-DSA-87-ECDSA-P521**: ML-DSA-87 + ECDSA with P-521 curve
 
 #### ML-KEM Composite Key Encapsulation
-Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM, formerly Kyber) combined with ECDH:
+Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM, formerly Kyber)
+combined with RSA-OAEP, ECDH, X25519 or X448 — the 12 algorithms of
+draft-ietf-lamps-pq-composite-kem-18:
 
-- **ML-KEM-512-ECDH-P256**: ML-KEM-512 + ECDH with P-256 curve
-- **ML-KEM-768-ECDH-P384**: ML-KEM-768 + ECDH with P-384 curve
-- **ML-KEM-1024-ECDH-P521**: ML-KEM-1024 + ECDH with P-521 curve
+- **id-MLKEM768-RSA2048-SHA3-256**, **id-MLKEM768-RSA3072-SHA3-256**,
+  **id-MLKEM768-RSA4096-SHA3-256**
+- **id-MLKEM768-X25519-SHA3-256**
+- **id-MLKEM768-ECDH-P256-SHA3-256**, **id-MLKEM768-ECDH-P384-SHA3-256**,
+  **id-MLKEM768-ECDH-brainpoolP256r1-SHA3-256**
+- **id-MLKEM1024-RSA3072-SHA3-256**
+- **id-MLKEM1024-ECDH-P384-SHA3-256**, **id-MLKEM1024-ECDH-P521-SHA3-256**,
+  **id-MLKEM1024-ECDH-brainpoolP384r1-SHA3-256**
+- **id-MLKEM1024-X448-SHA3-256**
+
+Key generation, encapsulation, decapsulation, and PKCS#8 /
+SubjectPublicKeyInfo key loading and export (PEM and DER) are implemented;
+decapsulation is verified against the LAMPS working group's Appendix G test
+vectors for all 12 algorithms.
 
 ## Requirements
 
-- OpenSSL 3.0 or later
+- OpenSSL 3.5 or later (ML-KEM and ML-DSA are 3.5 features)
 - CMake 3.10 or later (or GNU Make)
 - GCC or compatible C compiler
 
@@ -119,11 +132,11 @@ activate = 1
 
 The provider implements:
 
-1. **Provider Infrastructure** (`src/provider.c`): Core provider initialization and registration
-2. **Signature Operations** (`src/composite_sig.c`): Composite signature implementation
-3. **KEM Operations** (`src/composite_kem.c`): Composite KEM implementation
-4. **ML-DSA Dispatch** (`src/mldsa_composite.c`): ML-DSA algorithm dispatch tables
-5. **ML-KEM Dispatch** (`src/mlkem_composite.c`): ML-KEM algorithm dispatch tables
+1. **Provider Infrastructure** (`src/common/provider.c`): Core provider initialization and registration
+2. **Signature Operations** (`src/signature/composite_sig.c`): Composite signature implementation
+3. **KEM Operations** (`src/kem/composite_kem.c`): Composite KEM implementation
+4. **ML-DSA Dispatch** (`src/signature/mldsa_composite.c`): ML-DSA algorithm dispatch tables
+5. **ML-KEM Dispatch** (`src/kem/mlkem_composite.c`): ML-KEM algorithm dispatch tables
 
 ## Security Considerations
 

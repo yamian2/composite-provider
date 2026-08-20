@@ -205,11 +205,11 @@ const OSSL_ALGORITHM *composite_keymgmt(void *provctx);
 #define EXTERN_DECLARE_SIG_DISPATCH_TABLE(alg_name, alg2_name) \
     extern const OSSL_DISPATCH composite_##alg_name##_##alg2_name##_signature_functions[];
 
-#define DECLARE_KEM_DISPATCH_TABLE(alg_name, alg2_name) \
-    const OSSL_DISPATCH composite_##alg_name##_##alg2_name##_kem_functions[];
+#define DECLARE_KEM_DISPATCH_TABLE(alg_name) \
+    const OSSL_DISPATCH composite_##alg_name##_kem_functions[];
 
-#define EXTERN_DECLARE_KEM_DISPATCH_TABLE(alg_name, alg2_name) \
-    extern const OSSL_DISPATCH composite_##alg_name##_##alg2_name##_kem_functions[];
+#define EXTERN_DECLARE_KEM_DISPATCH_TABLE(alg_name) \
+    extern const OSSL_DISPATCH composite_##alg_name##_kem_functions[];
 
 #define DECLARE_KEYMGMT_DISPATCH_TABLE(alg_name, alg2_name) \
     const OSSL_DISPATCH composite_##alg_name##_##alg2_name##_keymgmt_functions[];
