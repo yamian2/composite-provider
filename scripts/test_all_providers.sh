@@ -79,7 +79,7 @@ if (( GEN_COMPAT )); then
 fi
 
 # 18 composite signature OIDs (draft-ietf-lamps-pq-composite-sigs)
-COMPOSITE_OIDS=(
+COMPOSITE_SIG_OIDS=(
     "1.3.6.1.5.5.7.6.37"
     "1.3.6.1.5.5.7.6.38"
     "1.3.6.1.5.5.7.6.39"
@@ -100,6 +100,22 @@ COMPOSITE_OIDS=(
     "1.3.6.1.5.5.7.6.54"
 )
 
+# 12 composite KEM OIDs (draft-ietf-lamps-pq-composite-kem)
+COMPOSITE_KEM_OIDS=(
+    "1.3.6.1.5.5.7.6.55"
+    "1.3.6.1.5.5.7.6.56"
+    "1.3.6.1.5.5.7.6.57"
+    "1.3.6.1.5.5.7.6.58"
+    "1.3.6.1.5.5.7.6.59"
+    "1.3.6.1.5.5.7.6.60"
+    "1.3.6.1.5.5.7.6.61"
+    "1.3.6.1.5.5.7.6.62"
+    "1.3.6.1.5.5.7.6.63"
+    "1.3.6.1.5.5.7.6.64"
+    "1.3.6.1.5.5.7.6.65"
+    "1.3.6.1.5.5.7.6.66"
+)
+
 # ─── Global counters ─────────────────────────────────────────────────────────
 TOTAL_PROVIDERS=0
 TOTAL_WITH_COMPOSITE=0        # providers with at least 1 artifact found (PASS+FAIL > 0)
@@ -108,7 +124,7 @@ TOTAL_EXTRACT_ERRORS=0        # providers whose zip failed to extract
 
 # ─── Banner ──────────────────────────────────────────────────────────────────
 echo "╔══════════════════════════════════════════════════════════════════════════╗"
-echo "║       Composite Signature R5 — Multi-Provider Verification              ║"
+echo "║   Composite Signature and KEM R5 — Multi-Provider Verification           ║"
 echo "╚══════════════════════════════════════════════════════════════════════════╝"
 echo "OpenSSL:  ${OPENSSL_BIN}"
 echo "Date:     $(date '+%Y-%m-%d %H:%M:%S')"
@@ -161,7 +177,7 @@ for zip_path in "${ZIP_FILES[@]}"; do
         csv_file="${COMPAT_MATRICES_DIR}/${provider_name}_${OUR_NAME}.csv"
         {
             echo "key_algorithm_oid,type,test_result"
-            for oid in "${COMPOSITE_OIDS[@]}"; do
+            for oid in "${COMPOSITE_SIG_OIDS[@]}"; do
                 if echo "${provider_output}" | grep -qE "\[CERT[[:space:]]*\].*${oid}.*(PASS|FAIL)"; then
                     if echo "${provider_output}" | grep -qE "\[CERT[[:space:]]*\].*${oid}.*PASS"; then
                         cert_val="Y"
@@ -172,6 +188,32 @@ for zip_path in "${ZIP_FILES[@]}"; do
                 fi
                 if echo "${provider_output}" | grep -qE "\[PRIVKEY\].*${oid}.*(PASS|FAIL)"; then
                     if echo "${provider_output}" | grep -qE "\[PRIVKEY\].*${oid}.*PASS"; then
+                        priv_val="Y"
+                    else
+                        priv_val="N"
+                    fi
+                    echo "${oid},priv,${priv_val}"
+                fi
+            done
+            for oid in "${COMPOSITE_KEM_OIDS[@]}"; do
+                if echo "${provider_output}" | grep -qE "\[KEMCERT[[:space:]]*\].*${oid}.*(PASS|FAIL)"; then
+                    if echo "${provider_output}" | grep -qE "\[KEMCERT[[:space:]]*\].*${oid}.*PASS"; then
+                        cert_val="Y"
+                    else
+                        cert_val="N"
+                    fi
+                    echo "${oid},cert,${cert_val}"
+                fi
+                if echo "${provider_output}" | grep -qE "\[KEMCONS[[:space:]]*\].*${oid}.*(PASS|FAIL)"; then
+                    if echo "${provider_output}" | grep -qE "\[KEMCONS[[:space:]]*\].*${oid}.*PASS"; then
+                        consistent_val="Y"
+                    else
+                        consistent_val="N"
+                    fi
+                    echo "${oid},consistent,${consistent_val}"
+                fi
+                if echo "${provider_output}" | grep -qE "\[KEMPRIV[[:space:]]*\].*${oid}.*(PASS|FAIL)"; then
+                    if echo "${provider_output}" | grep -qE "\[KEMPRIV[[:space:]]*\].*${oid}.*PASS"; then
                         priv_val="Y"
                     else
                         priv_val="N"
