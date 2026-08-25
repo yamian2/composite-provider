@@ -74,19 +74,30 @@ BUILD_DIR=/tmp/my_build OSSL_LIB_DIR=/opt/openssl/lib ./scripts/run_tests.sh
 ## gen_composite_r5.sh
 
 Generates an `artifacts_certs_r5.zip` containing self-signed TA certificates
-and PKCS#8 private keys for all 18 composite signature algorithms, following the
+and PKCS#8 private keys for all 18 composite signature algorithms, plus EE
+certificates, private keys, ciphertexts and shared secrets for all 12 composite
+KEM algorithms. The output follows the
 [IETF Hackathon pqc-certificates](https://github.com/IETF-Hackathon/pqc-certificates) R5 artifact naming convention:
 
 ```
 <friendly>-<oid>_ta.der    (DER self-signed CA certificate, 10-year)
 <friendly>-<oid>_priv.der  (DER PKCS#8 private key)
+<friendly>-<oid>_ee.der    (DER EE certificate carrying a KEM public key)
+<friendly>-<oid>_priv.raw  (raw draft KEM private key material)
+<friendly>-<oid>_ciphertext.bin
+<friendly>-<oid>_ss.bin
 ```
+
+KEM EE certificates are signed by the ML-DSA TA at the equivalent ML-KEM
+security level. ML-KEM-768 combinations chain to ML-DSA-65 TAs; ML-KEM-1024
+combinations chain to ML-DSA-87 TAs. Where the R5 composite signature OID set
+has a natural matching traditional component, that matching TA is used.
 
 **Usage**
 
 ```bash
-./scripts/gen_composite_r5.sh               # writes zip to scripts/
-./scripts/gen_composite_r5.sh /output/dir   # writes zip to the given directory
+./scripts/gen_composite_r5.sh               # writes zip and artifacts to scripts/
+./scripts/gen_composite_r5.sh /output/dir   # writes zip and artifacts to the given directory
 ```
 
 **Environment variables**
@@ -98,19 +109,63 @@ and PKCS#8 private keys for all 18 composite signature algorithms, following the
 | `OPENSSL_CONF` | `<root>/tests/composite.cnf`   | OpenSSL config that loads the composite provider |
 
 **Prerequisites:** The composite provider must already be built (`_build/composite.so`
-must exist).  Run `build_and_test.sh` first.
+must exist) and `xxd` must be available for `_priv.raw` extraction. Run
+`build_and_test.sh` first.
+
+---
+
+## gen_composite_cms_v3.sh
+
+Generates an `artifacts_cms_v3.zip` containing CMS KEMRecipientInfo artifacts
+for all 12 composite KEM algorithms. The generator uses the README's MTI KDF
+for the composite KEM OIDs:
+
+```
+id-alg-hkdf-with-sha256
+```
+
+For each KEM OID it emits:
+
+```
+artifacts_cms_v3/<friendly>-<oid>_ee.der
+artifacts_cms_v3/<friendly>-<oid>_priv.der
+artifacts_cms_v3/<friendly>-<oid>_kemri_id-alg-hkdf-with-sha256.der
+artifacts_cms_v3/<friendly>-<oid>_kemri_id-alg-hkdf-with-sha256_ukm.der
+artifacts_cms_v3/<friendly>-<oid>_kemri_ukm.der
+artifacts_cms_v3/<friendly>-<oid>_kemri_auth_id-alg-hkdf-with-sha256.der
+artifacts_cms_v3/<friendly>-<oid>_kemri_auth_id-alg-hkdf-with-sha256_ukm.der
+artifacts_cms_v3/<friendly>-<oid>_kemri_auth.der
+```
+
+The script expects `gen_composite_r5.sh` to have already generated the matching
+`_ee.der` and `_priv.der` files in the provider directory. It reuses the KEM
+private keys, but reissues CMS-specific KEM EE certificates under the bundled
+ML-DSA-44 TA in `artifacts_cms_v3/ta.der`, matching the CMS v3 artifact shape.
+
+**Usage**
+
+```bash
+./scripts/gen_composite_cms_v3.sh /path/to/provider/artifact/dir
+```
 
 ---
 
 ## check_composite_r5.sh
 
 Verifies an `artifacts_certs_r5/` directory of R5 artifacts against the
-composite provider for all 18 algorithms.  Two checks are performed per
-algorithm:
+composite provider. Two checks are performed per signature algorithm and three
+checks are performed per KEM algorithm:
 
 - **CERT** — self-signed TA certificate is correctly verified with `-check_ss_sig`.
 - **PRIVKEY** — sign test data with the private key and verify the signature
   against the public key extracted from the TA cert.
+- **KEMCERT** — EE certificate is chain-verified against the expected
+  equivalent-level ML-DSA TA, its KEM public key is extracted, and encapsulation
+  succeeds.
+- **KEMCONS** — public key derived from `_priv.der` matches the public key in
+  `_ee.der`.
+- **KEMPRIV** — decapsulating `_ciphertext.bin` with `_priv.der` reproduces
+  `_ss.bin`.
 
 **Usage**
 
@@ -137,8 +192,8 @@ directory must contain files named `*<oid>_ta.der` and `*<oid>_priv.der`.
 
 Iterates over every provider directory found under `scripts/providers/`, extracts
 its `artifacts_certs_r5.zip`, runs `check_composite_r5.sh` against the composite
-provider, generates per-provider CSV compatibility matrices, and writes a full
-report to `scripts/output.txt`.
+provider, generates per-provider CSV compatibility matrices for signature and
+KEM artifacts, and writes a full report to `scripts/output.txt`.
 
 **Usage**
 
